@@ -1,11 +1,7 @@
 import cv2
 import time
 import os
-
-import os
-import time
 import numpy as np
-import cv2
 import torch
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
@@ -26,8 +22,6 @@ import google.generativeai as genai
 import pyttsx3
 
 import argparse
-
-import Braille
 
 def copyStateDict(state_dict):
     """Copy state dict for CRAFT model."""
@@ -65,9 +59,6 @@ def preprocess_image(image):
     if abs(angle) > 45:
         return image  # Return the original image without rotation
 
-    # Print the detected skew angle
-    print(f"Detected skew angle (limited): {angle:.2f} degrees")
-
     # Get the image dimensions
     (h, w) = image.shape[:2]
 
@@ -79,7 +70,6 @@ def preprocess_image(image):
     rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
     return rotated
-
 
 def save_boxes_as_images(image, boxes, name):
     """Save detected text boxes as individual images."""
@@ -110,8 +100,7 @@ def save_boxes_as_images(image, boxes, name):
             box_image = preprocess_image(image[int(y_min):int(y_max), int(x_min):int(x_max)])
             box_filename = os.path.join(name, f"box_{i}.png")
             cv2.imwrite(box_filename, box_image)
-            box_to_text(name,i)
-
+            box_to_text(name, i)
 
 def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly, refine_net=None, canvas_size=1280, mag_ratio=1.5):
     """Perform text detection on an image."""
@@ -159,7 +148,6 @@ def load_craft_model(trained_model='CRAFT/craft_mlt_25k.pth', cuda=False):
         net.load_state_dict(copyStateDict(torch.load(trained_model, map_location='cpu')))
     return net
 
-
 def process_image(image_path, net, refine_net=None, text_threshold=0.7, low_text=0.4, link_threshold=0.4, cuda=False, canvas_size=1280, mag_ratio=1.5, poly=False, show_time=True, output_dir='./result'):
     """Process a single image for text detection."""
     net.eval()
@@ -184,7 +172,6 @@ def process_image(image_path, net, refine_net=None, text_threshold=0.7, low_text
 
     file_utils.saveResult(filename, image[:,:,::-1], polys, dirname=image_result_folder)
 
-
 def box_to_text(name, box_no):
     results = reader.recognize(f'{name}/box_{box_no}.png')
 
@@ -194,11 +181,9 @@ def box_to_text(name, box_no):
     parent_dir = os.path.abspath(os.path.join(name, '..'))
     content_file_path = os.path.join(parent_dir, 'content.txt')
 
-    file = open(f'{content_file_path}', 'a')
-    for bbox, text, prob in results:
-        file.write(f"{text} (probability: {prob})\n")
-    file.close()
-
+    with open(content_file_path, 'a') as file:
+        for bbox, text, prob in results:
+            file.write(f"{text} (probability: {prob})\n")
 
 def capture_and_save_image(base_dir=r"result", camera_id=0, width=1920, height=1080):
     # Initialize camera
@@ -220,7 +205,7 @@ def capture_and_save_image(base_dir=r"result", camera_id=0, width=1920, height=1
     # Generate timestamp and create the corresponding directory
     timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
     print(timestamp)
-    save_dir = f'{base_dir}//{timestamp}'
+    save_dir = os.path.join(base_dir, timestamp)
     if not os.path.exists(save_dir):
         print(save_dir)
         os.makedirs(save_dir)
@@ -231,10 +216,8 @@ def capture_and_save_image(base_dir=r"result", camera_id=0, width=1920, height=1
     # Save the image
     cv2.imwrite(filename, photo)
 
-    # Return the full path to the saved image
+    # Return the timestamp (which corresponds to the directory name)
     return timestamp
-
-
 
 def llm_refinement(name):
     global model, secrets
@@ -249,41 +232,76 @@ def llm_refinement(name):
 
     image = Image.open(image_path).convert('RGB')
 
-    sys_prompt = secrets['System_Prompt']
+    sys_prompt = (
+        "You are an assistant for the blind, tasked with converting provided text into a form that can be clearly understood when read aloud to a deaf person. "
+        "Your primary responsibility is to maintain the original text as much as possible while making minimal adjustments for clarity, context, and accuracy. "
+        "Key Guidelines: "
+        "Minimal Adjustments: Convert the text into standard English, making only minor changes to enhance understanding. These changes should be subtle, with the majority of the original text remaining intact. "
+        "Math Symbols and Greek Letters: Accurately convert mathematical symbols and greek letters into spoken language as a person might read them in their head. Ensure the symbols are articulated clearly without being ignored. "
+        "Accuracy: Correct any grammatical inaccuracies in the original text while ensuring that the majority of the text remains unchanged. ENSURE THAT MAJORITY OF THE TEXT REMAINS UNCHANGED Preserve Original Text: The essence and structure of the original text should be preserved. Only make slight adjustments necessary for clarity or accuracy and fixing the grammar as it should make sense. "
+        "No Detailed Descriptions: Do not provide detailed descriptions or transcriptions. Focus on adding just enough context for clarity without altering the overall text. ENSURE THAT THE LAST POINT IS MAINTAINED AT ALL TIMES IF IT IS NOT THEN BLIND PEOPLE WILL NOT BE AIDED PROPERLY. "
+        "The photo given with is what takes the ocr from it. Use it to correct any errors in ocr. The probabilities of each word being correct are given too separated by new line characters: use that to determine what to change. "
+        "The user prompt starts NOW:"
+    )
 
-    response = model.generate_content([sys_prompt, text_content, image],generation_config=genai.types.GenerationConfig(temperature=1.0))
+    response = model.generate_content(
+        [sys_prompt, text_content, image],
+        generation_config=genai.types.GenerationConfig(temperature=1.0)
+    )
 
     with open(modified_file_path, 'w') as modified_file:
         modified_file.write(response.text)
     return response.text
 
-    
 def tts(text):
     engine.say(text)
-    engine.runAndWait() 
-
+    engine.runAndWait()
 
 def main():
     global secrets, reader, model, engine
-    net = load_craft_model(cuda = True)
-    secrets = get_Secrets()
-    genai.configure(api_key=secrets["Google_Gemini_Api"])
-    model = genai.GenerativeModel(model_name="gemini-1.5-pro")
-    reader = easyocr.Reader(['en'],gpu=True)
-    engine = pyttsx3.init()
-    t = time.time()
-    name = capture_and_save_image(camera_id=1)
-    process_image(f'./result//{name}//{name}.png', net, output_dir=f'./result//{name}')
-    text_to_be_read = llm_refinement(name)
-    tts(text_to_be_read)
-    print(time.time()-t)
 
-    parser = argparse.ArgumentParser(description="Process some braille.")
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Process images for text detection and accessibility.")
+    parser.add_argument('-c', '--camera_id', type=int, default=0, help="ID of the camera to use (default: 0)")
+    parser.add_argument('--use_gpu', type=bool, default=False, help='Use GPU if available (default: False)')
     parser.add_argument('-b', '--braille', action='store_true', help="Enable Braille processing mode")
 
     args = parser.parse_args()
 
+    camera_id = args.camera_id
+    cuda = args.use_gpu
+
+    # Load CRAFT model
+    net = load_craft_model(cuda=cuda)
+
+    # Load secrets and configure Google Generative AI
+    secrets = get_Secrets()
+    genai.configure(api_key=secrets["Google_Gemini_Api"])
+
+    # Initialize the Generative Model
+    model = genai.GenerativeModel(model_name="gemini-1.5-pro")
+
+    # Initialize EasyOCR Reader
+    reader = easyocr.Reader(['en'], gpu=cuda)
+
+    # Initialize Text-to-Speech Engine
+    engine = pyttsx3.init()
+
+    # Start processing
+    t = time.time()
+    name = capture_and_save_image(camera_id=camera_id)
+    process_image(
+        f'./result/{name}/{name}.png',
+        net,
+        output_dir=f'./result/{name}',
+        cuda=cuda
+    )
+    text_to_be_read = llm_refinement(name)
+    tts(text_to_be_read)
+    print(f"Processing time: {time.time() - t:.2f} seconds")
+
     if args.braille:
+        import Braille
         Braille.process_braille_file(os.path.join('result', name, 'modified.txt'))
 
 if __name__ == '__main__':

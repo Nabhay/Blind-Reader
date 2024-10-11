@@ -1,0 +1,6 @@
+Secrets.json
+/env_craft
+__pycache__
+CRAFT/__pycache__/
+result
+CRAFT/data/
