@@ -6,21 +6,15 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 from collections import OrderedDict
-
 from CRAFT import craft_utils
 from CRAFT import imgproc
 from CRAFT import file_utils
 from CRAFT.craft import CRAFT
-
 from PIL import Image
-
 import easyocr
 from Secret_Parser import get_Secrets
-
 import google.generativeai as genai
-
 import pyttsx3
-
 import argparse
 
 def copyStateDict(state_dict):
@@ -185,7 +179,14 @@ def box_to_text(name, box_no):
         for bbox, text, prob in results:
             file.write(f"{text} (probability: {prob})\n")
 
+def is_image_blurry(image, threshold=50.0):
+    """Check if the image is blurry using the Laplacian variance method."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    return laplacian_var < threshold
+
 def capture_and_save_image(base_dir=r"result", camera_id=0, width=1920, height=1080):
+    """Capture an image from the camera, check for blurriness, and save it."""
     # Initialize camera
     cap = cv2.VideoCapture(camera_id)
 
@@ -193,12 +194,19 @@ def capture_and_save_image(base_dir=r"result", camera_id=0, width=1920, height=1
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
-    # Capture image
-    ret, photo = cap.read()
-    if not ret:
-        cap.release()
-        raise RuntimeError("Failed to capture image")
+    while True:
+        # Capture image
+        ret, photo = cap.read()
+        if not ret:
+            cap.release()
+            raise RuntimeError("Failed to capture image")
 
+        # Check for blurriness
+        if is_image_blurry(photo):
+            print("Captured image is blurry. Retrying...")
+            continue  # Retry capturing if the image is blurry
+
+        break  # Exit loop if image is not blurry
     # Release camera
     cap.release()
 
@@ -219,7 +227,7 @@ def capture_and_save_image(base_dir=r"result", camera_id=0, width=1920, height=1
     # Return the timestamp (which corresponds to the directory name)
     return timestamp
 
-def llm_refinement(name):
+def llm_refinement(name, answer_query=False):
     global model, secrets
 
     # Define the paths
@@ -232,16 +240,38 @@ def llm_refinement(name):
 
     image = Image.open(image_path).convert('RGB')
 
-    sys_prompt = (
-        "You are an assistant for the blind, tasked with converting provided text into a form that can be clearly understood when read aloud to a deaf person. "
-        "Your primary responsibility is to maintain the original text as much as possible while making minimal adjustments for clarity, context, and accuracy. "
-        "Key Guidelines: "
-        "Minimal Adjustments: Convert the text into standard English, making only minor changes to enhance understanding. These changes should be subtle, with the majority of the original text remaining intact. "
-        "Math Symbols and Greek Letters: Accurately convert mathematical symbols and greek letters into spoken language as a person might read them in their head. Ensure the symbols are articulated clearly without being ignored. "
-        "Accuracy: Correct any grammatical inaccuracies in the original text while ensuring that the majority of the text remains unchanged. ENSURE THAT MAJORITY OF THE TEXT REMAINS UNCHANGED Preserve Original Text: The essence and structure of the original text should be preserved. Only make slight adjustments necessary for clarity or accuracy and fixing the grammar as it should make sense. "
-        "No Detailed Descriptions: Do not provide detailed descriptions or transcriptions. Focus on adding just enough context for clarity without altering the overall text. ENSURE THAT THE LAST POINT IS MAINTAINED AT ALL TIMES IF IT IS NOT THEN BLIND PEOPLE WILL NOT BE AIDED PROPERLY. "
-        "The photo given with is what takes the ocr from it. Use it to correct any errors in ocr. The probabilities of each word being correct are given too separated by new line characters: use that to determine what to change. "
-        "The user prompt starts NOW:"
+    
+
+    if answer_query:
+        sys_prompt = ("""
+                        You are an assistant tasked with analyzing text and providing accurate answers to questions included in the frame. Your primary responsibility is to focus on the question, using the provided text as the sole source of information to construct clear, concise, and accurate responses.
+                        Key Guidelines:
+                        Focus on the Question: Your primary goal is to answer the question posed in the frame directly. Ensure your response is clear and addresses the query fully. Avoid adding unrelated information.
+                        Use the Provided Text: Base your answers strictly on the text in the frame. Do not infer information beyond what is explicitly stated or implied within the text.
+                        Clarity and Accuracy: Ensure your response is simple and easy to understand. Correct any ambiguities or errors in the source text that might hinder comprehension.
+                        Conciseness: Avoid verbosity. Provide only the information needed to answer the question effectively.
+                        No External Context: Do not include details or context from outside the provided text. Stick strictly to what is available within the frame.
+                        Additional Considerations:
+
+                        If the frame contains symbols, mathematical notation, or complex language, interpret these into standard English or spoken equivalents to enhance clarity.
+                        If the question cannot be answered using the provided text, clearly state that the information is not available.
+                        The user prompt starts NOW:""")
+    else:
+        sys_prompt = ("""
+                    You are an assistant for the blind, tasked with converting provided text into a format that can be clearly understood when read aloud to a deaf person.
+                    Primary Responsibilities:
+
+                    Minimal Adjustments: Convert the text into standard English, making only minor changes for clarity and accuracy. Preserve the original structure and meaning as much as possible, ensuring the text remains recognizable.
+                    Math Symbols and Greek Letters: Accurately convey mathematical symbols and Greek letters as they would be spoken. For example, replace symbols like "∑" with "sigma" and articulate fractions or equations in an intuitive manner.
+                    Accuracy: Correct grammatical errors while preserving the overall content and intent. Avoid unnecessary rephrasing or rewriting unless required for clarity or comprehension.
+                    Preserve Original Text: The essence and structure of the original text must remain intact. Adjustments should be subtle and made only when essential for understanding.
+                    No Detailed Descriptions: Avoid providing detailed explanations or transcriptions. Add only the minimal context needed to clarify errors or ambiguities without altering the original meaning.
+                    Additional Considerations:
+
+                    When working with OCR-generated text, use the provided probabilities for each word to guide corrections. Prioritize accuracy by selecting the most probable corrections while maintaining the text's coherence.
+                    Ensure all adjustments support the needs of blind users, ensuring clarity when read aloud.
+                    The user prompt starts NOW:
+                  """
     )
 
     response = model.generate_content(
@@ -265,6 +295,7 @@ def main():
     parser.add_argument('-c', '--camera_id', type=int, default=0, help="ID of the camera to use (default: 0)")
     parser.add_argument('--use_gpu', type=bool, default=False, help='Use GPU if available (default: False)')
     parser.add_argument('-b', '--braille', action='store_true', help="Enable Braille processing mode")
+    parser.add_argument('-a', '--answer_query', action='store_true', help="Answer the question in frame")
 
     args = parser.parse_args()
 
@@ -296,7 +327,7 @@ def main():
         output_dir=f'./result/{name}',
         cuda=cuda
     )
-    text_to_be_read = llm_refinement(name)
+    text_to_be_read = llm_refinement(name, answer_query=args.answer_query)
     tts(text_to_be_read)
     print(f"Processing time: {time.time() - t:.2f} seconds")
 
