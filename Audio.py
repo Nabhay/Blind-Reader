@@ -6,6 +6,7 @@ import os
 import time
 import google.generativeai as genai
 from Secret_Parser import get_Secrets
+import pyttsx3
 
 # Audio recording parameters
 FORMAT = pyaudio.paInt16
@@ -39,7 +40,7 @@ print("Recording...")
 frames = []
 def on_press(key):
     try:
-        if key.char == 'q':  # Stop recording when 'q' is pressed
+        if key.char == '5':
             print("Recording stopped.")
             return False
     except AttributeError:
@@ -82,11 +83,13 @@ with open(transcription_file, 'w') as file:
 
 # Send the transcribed text to Gemini API
 def send_to_gemini(text):
+    system_prompt = "This is a helper for blind people. It is supposed to be an assistant but will keep its answers brief unless the user asks for more details."
+    full_text = f"{system_prompt}\n\nUser: {text}"
     secrets = get_Secrets()
     genai.configure(api_key=secrets["Google_Gemini_Api"])
     model = genai.GenerativeModel(model_name="gemini-1.5-pro")
     response = model.generate_content(
-        [text],
+        [full_text],
         generation_config=genai.types.GenerationConfig(temperature=1.0)
     )
     return response.text
@@ -96,3 +99,18 @@ gemini_response = send_to_gemini(text)
 gemini_file = os.path.join(recording_folder, "gemini_response.txt")
 with open(gemini_file, 'w') as file:
     file.write(gemini_response)
+
+# Initialize the text-to-speech engine
+engine = pyttsx3.init()
+
+# Increase the read speed
+rate = engine.getProperty('rate')
+engine.setProperty('rate', rate + 50)  # Increase the rate by 100 (you can adjust this value)
+
+# Function to read text aloud
+def tts(text):
+    engine.say(text)
+    engine.runAndWait()
+
+# Read the Gemini response aloud
+tts(gemini_response)

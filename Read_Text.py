@@ -177,7 +177,7 @@ def box_to_text(name, box_no):
         for bbox, text, prob in results:
             file.write(f"{text} (probability: {prob})\n")
 
-def is_image_blurry(image, threshold=60.0):
+def is_image_blurry(image, threshold=40.0):
     """Check if the image is blurry using the Laplacian variance method."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
@@ -242,7 +242,7 @@ def llm_refinement(name, answer_query=False):
 
     if answer_query:
         sys_prompt = ("""
-                    You are an assistant for the blind, tasked with answering questions based on the provided text and image. It is mandatory for you to answer every single question. You may use outside context to provide a more accurate answer. You job is to only answer the question, not mention anything aside from the question. The text contains its probablities next to it aswell""")
+                    You are an assistant for the blind, tasked with answering questions based on the provided text and image. It is mandatory for you to answer every single question. You may use outside context to provide a more accurate answer. You job is to only answer the question, and explain the answer if an explanation might be required to get to the answer, like applying logic, theorems etc. The text contains its probablities next to it aswell""")
     else:
         sys_prompt = ("""
                     You are an assistant for the blind, tasked with converting provided text into a format that can be clearly understood when read aloud to a deaf person.

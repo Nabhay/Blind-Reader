@@ -80,7 +80,7 @@ def describe_surroundings(name, secrets):
     # Generate description
     print("Generating description with Gemini...")
     response = model.generate_content(
-        ['Describe the surroundings in the image with vivid descriptions and adjectives.', image],
+        ['Describe the surroundings in the image with vivid descriptions and adjectives. Do remember that you have to make it brief aswell as the environment will keep changing. Hence the max should be around 150-175 words', image],
         generation_config=genai.types.GenerationConfig(temperature=0.7)
     )
 
@@ -119,7 +119,7 @@ def main():
 
     # Capture image
     try:
-        name = capture_and_save_image(camera_id=1)  # Adjust camera_id if necessary
+        name = capture_and_save_image(camera_id=0)  # Adjust camera_id if necessary
     except RuntimeError as e:
         print(e)
         return
