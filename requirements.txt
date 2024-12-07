@@ -1,7 +1,7 @@
-opencv-python==4.5.1.48
-numpy==1.24.3
-torch==1.10.0+cu113
-pillow==10.4.0
-easyocr==1.7.1
 google-generativeai==0.7.2
 pyttsx3==2.91
+easyocr==1.7.1
+pillow==10.4.0
+torch==1.10.0
+numpy==1.24.3
+opencv-python==4.5.1.48
