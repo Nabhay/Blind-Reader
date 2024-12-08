@@ -1,7 +1,7 @@
 import pyaudio
 import wave
 import speech_recognition as sr
-from pynput import keyboard
+import keyboard  # Changed import
 import os
 import time
 import google.generativeai as genai
@@ -38,19 +38,20 @@ stream = audio.open(format=FORMAT, channels=CHANNELS,
 print("Recording...")
 
 frames = []
-def on_press(key):
-    try:
-        if key.char == '5':
-            print("Recording stopped.")
-            return False
-    except AttributeError:
-        pass
+def on_press(event):
+    if event.name == '4':
+        print("Recording stopped.")
+        return False
+    else:
+        print(f"Key pressed: {event.name}")
 
 # Collect audio data
-with keyboard.Listener(on_press=on_press) as listener:
-    while listener.running:
-        data = stream.read(CHUNK)
-        frames.append(data)
+keyboard.on_press(on_press)
+while True:
+    data = stream.read(CHUNK)
+    frames.append(data)
+    if not keyboard.is_pressed('4'):
+        break
 
 # Stop and close the stream
 stream.stop_stream()
@@ -102,10 +103,6 @@ with open(gemini_file, 'w') as file:
 
 # Initialize the text-to-speech engine
 engine = pyttsx3.init()
-
-# Increase the read speed
-rate = engine.getProperty('rate')
-engine.setProperty('rate', rate + 50)  # Increase the rate by 100 (you can adjust this value)
 
 # Function to read text aloud
 def tts(text):
