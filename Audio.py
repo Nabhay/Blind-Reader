@@ -39,7 +39,7 @@ print("Recording...")
 
 frames = []
 def on_press(event):
-    if event.name == '4':
+    if event.name == '5':
         print("Recording stopped.")
         return False
     else:
